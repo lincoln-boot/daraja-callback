@@ -1,7 +1,14 @@
-FROM php:8.1-cli
+# Use the official PHP image with Apache
+FROM php:8.1-apache
 
-WORKDIR /app
+# Enable mod_rewrite (optional)
+RUN a2enmod rewrite
 
-COPY . /app
+# Copy all files to the Apache server root
+COPY . /var/www/html/
 
-CMD ["php", "-S", "0.0.0.0:8000"]
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html
+
+EXPOSE 80
+
