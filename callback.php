@@ -1,16 +1,13 @@
 <?php
 // callback.php
 
-// Step 1: Read raw JSON data from M-PESA
+// Step 1: Get raw POST data from Daraja
 $data = file_get_contents("php://input");
-
-// Optional: Log raw callback data for debugging
-file_put_contents("mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND);
+file_put_contents("/tmp/mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND); // Safe log
 
 // Step 2: Decode JSON data
 $response = json_decode($data);
 
-// Step 3: Validate response structure
 if (!$response || !isset($response->Body->stkCallback->ResultCode)) {
     http_response_code(400);
     echo json_encode(['ResultCode' => 1, 'ResultDesc' => 'Invalid callback data']);
@@ -20,39 +17,37 @@ if (!$response || !isset($response->Body->stkCallback->ResultCode)) {
 $resultCode = $response->Body->stkCallback->ResultCode;
 
 if ($resultCode == 0) {
-    // Step 4: Extract metadata safely
-    $callbackItems = $response->Body->stkCallback->CallbackMetadata->Item;
+    // Successful payment
+    $amount    = $response->Body->stkCallback->CallbackMetadata->Item[0]->Value ?? 0;
+    $mpesaCode = $response->Body->stkCallback->CallbackMetadata->Item[1]->Value ?? '';
+    $phone     = $response->Body->stkCallback->CallbackMetadata->Item[4]->Value ?? '';
 
-    $amount = $callbackItems[0]->Value ?? 0;
-    $mpesaCode = $callbackItems[1]->Value ?? '';
-    $phone = $callbackItems[4]->Value ?? '';
-
-    // Step 5: Generate a random voucher
+    // Generate voucher
     $voucher = strtoupper(substr(md5(time()), 0, 10));
 
-    // Step 6: Connect to MySQL using IP instead of hostname
-    $conn = new mysqli("185.27.134.10", "if0_38969326", "oj12202003", "if0_38969326_epiz_12345678_daylight");
+    // Step 3: Connect to your InfinityFree MySQL database (IP is more reliable than hostname)
+    $dbHost = 'IP_ADDRESS_HERE'; // Replace this with resolved IP of sql313.infinityfree.com
+    $dbUser = 'if0_38969326';
+    $dbPass = 'oj12202003';
+    $dbName = 'if0_38969326_epiz_12345678_daylight';
 
+    $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
     if ($conn->connect_error) {
-        // Log and respond if DB fails
-        file_put_contents("db_error_log.txt", $conn->connect_error . PHP_EOL, FILE_APPEND);
+        file_put_contents("/tmp/db_error_log.txt", $conn->connect_error . PHP_EOL, FILE_APPEND);
         echo json_encode(['ResultCode' => 1, 'ResultDesc' => 'DB connection error']);
         exit();
     }
 
-    // Step 7: Save voucher to database
+    // Step 4: Save voucher to database
     $stmt = $conn->prepare("INSERT INTO vouchers (voucher_code, phone, amount, mpesa_code) VALUES (?, ?, ?, ?)");
     $stmt->bind_param("ssss", $voucher, $phone, $amount, $mpesaCode);
     $stmt->execute();
     $stmt->close();
     $conn->close();
 
-    // Step 8: Acknowledge Safaricom
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Callback received successfully']);
     exit();
-
 } else {
-    // Payment failed or cancelled
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Payment failed or cancelled']);
     exit();
 }
