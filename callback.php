@@ -33,7 +33,7 @@ if ($resultCode == 0) {
     $voucher = strtoupper(substr(md5(time()), 0, 10));
 
     // Step 4: Connect to InfinityFree MySQL DB
-    $conn = new mysqli("sql313.infinityfree.com", "if0_38969326", "oj12202003", "if0_38969326_epiz_12345678_daylight");
+   $conn = new mysqli("185.27.134.10", "if0_38969326", "oj12202003", "if0_38969326_epiz_12345678_daylight");
 
     if ($conn->connect_error) {
         file_put_contents("db_error_log.txt", $conn->connect_error . PHP_EOL, FILE_APPEND);
