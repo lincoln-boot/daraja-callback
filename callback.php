@@ -23,7 +23,10 @@ if ($resultCode == 0) {
     $voucher = strtoupper(substr(md5(time()), 0, 10)); // Example voucher
 
     // Step 5: Connect to InfinityFree MySQL database
-    $conn = new mysqli("sql313.infinityfree.com", "if0_38969326", "oj12202003", "if0_38969326_epiz_12345678_daylight");
+    $conn = new mysqli("sql313.infinityfree.com", 
+    "if0_38969326", 
+    "oj12202003", 
+    "if0_38969326_epiz_12345678_daylight");
     if ($conn->connect_error) {
         die("DB Connection failed: " . $conn->connect_error);
     }
