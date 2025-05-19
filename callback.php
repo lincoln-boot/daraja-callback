@@ -1,49 +1,65 @@
-// callback.php logic here – will be filled after confirmation
 <?php
-// callback.php
+// callback.php (on Render)
 
-// Step 1: Get raw POST data from Daraja
+// Step 1: Get raw POST data
 $data = file_get_contents("php://input");
-$logFile = "mpesa_callback_log.txt"; // Optional: for logging
-file_put_contents($logFile, $data, FILE_APPEND); // Log for debugging
 
-// Step 2: Decode JSON data
+// Log raw data (optional but useful)
+file_put_contents("mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND);
+
+// Step 2: Decode the JSON
 $response = json_decode($data);
 
-// Step 3: Check if payment is successful
-$resultCode = $response->Body->stkCallback->ResultCode;
+if (!$response || !isset($response->Body->stkCallback->ResultCode)) {
+    http_response_code(400); // Tell Daraja something went wrong
+    echo json_encode([
+        "ResultCode" => 1,
+        "ResultDesc" => "Invalid callback data"
+    ]);
+    exit();
+}
+
+// Step 3: Extract values safely
+$callback = $response->Body->stkCallback;
+$resultCode = $callback->ResultCode;
 
 if ($resultCode == 0) {
-    // Success
-    $amount = $response->Body->stkCallback->CallbackMetadata->Item[0]->Value;
-    $mpesaCode = $response->Body->stkCallback->CallbackMetadata->Item[1]->Value;
-    $phone = $response->Body->stkCallback->CallbackMetadata->Item[4]->Value;
+    $metadata = $callback->CallbackMetadata->Item;
 
-    // Step 4: Generate random voucher
-    $voucher = strtoupper(substr(md5(time()), 0, 10)); // Example voucher
+    $amount = $metadata[0]->Value ?? 0;
+    $mpesaCode = $metadata[1]->Value ?? '';
+    $phone = $metadata[4]->Value ?? '';
 
-    // Step 5: Connect to InfinityFree MySQL database
-    $conn = new mysqli("sql313.infinityfree.com", 
-    "if0_38969326", 
-    "oj12202003", 
-    "if0_38969326_epiz_12345678_daylight");
+    $voucher = strtoupper(substr(md5(time()), 0, 10));
+
+    // Step 4: Connect to InfinityFree MySQL DB
+    $conn = new mysqli("sql313.infinityfree.com", "if0_38969326", "oj12202003", "if0_38969326_epiz_12345678_daylight");
+
     if ($conn->connect_error) {
-        die("DB Connection failed: " . $conn->connect_error);
+        file_put_contents("db_error_log.txt", $conn->connect_error . PHP_EOL, FILE_APPEND);
+        echo json_encode([
+            "ResultCode" => 1,
+            "ResultDesc" => "DB connection failed"
+        ]);
+        exit();
     }
 
-    // Step 6: Save voucher to DB
+    // Step 5: Save voucher to DB
     $stmt = $conn->prepare("INSERT INTO vouchers (voucher_code, phone, amount, mpesa_code) VALUES (?, ?, ?, ?)");
     $stmt->bind_param("ssss", $voucher, $phone, $amount, $mpesaCode);
     $stmt->execute();
     $stmt->close();
     $conn->close();
 
-    // Step 7: Redirect to thank you page with voucher
-    header("Location: thankyou.php?voucher=" . urlencode($voucher));
-    exit();
+    // Step 6: Respond to Daraja
+    echo json_encode([
+        "ResultCode" => 0,
+        "ResultDesc" => "Callback processed successfully"
+    ]);
 } else {
-    // Failed payment
-    header("Location: thankyou.php?voucher=FAILED");
-    exit();
+    echo json_encode([
+        "ResultCode" => 0,
+        "ResultDesc" => "Payment failed or cancelled"
+    ]);
 }
 ?>
