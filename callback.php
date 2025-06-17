@@ -1,24 +1,8 @@
 <?php
-// callback.php – hosted on Render
-
-// Connect to InfinityFree DB
-$conn = new mysqli(
-    "sql313.infinityfree.com",
-    "if0_38969326",
-    "oj12202003",
-    "if0_38969326_hotspot_voucherslin"
-);
-
-// Get and decode M-PESA callback data
 $data = json_decode(file_get_contents('php://input'), true);
-file_put_contents("mpesa_log.txt", json_encode($data) . "\n", FILE_APPEND); // log all callbacks
 
-if (!isset($data['Body']['stkCallback'])) {
-    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Invalid callback structure"]);
-    exit;
-}
+file_put_contents("mpesa_log.txt", json_encode($data) . "\n", FILE_APPEND);
 
-// Extract values
 $items = $data['Body']['stkCallback']['CallbackMetadata']['Item'] ?? [];
 $mpesa_code = null;
 $amount = null;
@@ -34,26 +18,13 @@ foreach ($items as $item) {
     }
 }
 
-if (!$mpesa_code || !$amount || !$phone) {
-    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Missing values"]);
-    exit;
-}
+if ($mpesa_code && $amount && $phone) {
+    $url = "https://daylightwifi.great-site.net/insert.php?phone=$phone&mpesa=$mpesa_code&amount=$amount";
+    $response = file_get_contents($url);
 
-// Find unused voucher
-$sql = "SELECT * FROM vouchers WHERE phone IS NULL AND amount = '$amount' LIMIT 1";
-$res = $conn->query($sql);
-
-if ($res->num_rows > 0) {
-    $voucher = $res->fetch_assoc();
-    $code = $voucher['voucher_code'];
-
-    $conn->query("UPDATE vouchers SET phone='$phone', mpesa_code='$mpesa_code' WHERE voucher_code='$code'");
-
-    // Log for debugging
-    file_put_contents("voucher_log.txt", "Paid: $phone -> $code\n", FILE_APPEND);
-
-    echo json_encode(["ResultCode" => 0, "ResultDesc" => "Voucher assigned"]); }
-    else {
-    echo json_encode(["ResultCode" => 1, "ResultDesc" => "No available voucher for amount $amount"]);
+    file_put_contents("insert_log.txt", "$url\n$response\n", FILE_APPEND);
+    echo json_encode(["ResultCode" => 0, "ResultDesc" => "Accepted"]);
+} else {
+    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Missing data"]);
 }
 ?>
