@@ -1,13 +1,10 @@
 <?php
-// callback.php hosted on Render
+// callback.php on Render
 
-// 1. Receive raw M-PESA callback data
+// Step 1: Get raw POST data from Daraja
 $data = file_get_contents("php://input");
+file_put_contents("/tmp/mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND); // Log for debugging
 
-// Optional: Log it to check later
-file_put_contents("/tmp/mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND);
-
-// 2. Decode JSON
 $response = json_decode($data);
 
 // Validate structure
@@ -17,21 +14,20 @@ if (!$response || !isset($response->Body->stkCallback->ResultCode)) {
     exit();
 }
 
-// 3. Check if transaction was successful
 $resultCode = $response->Body->stkCallback->ResultCode;
 
 if ($resultCode == 0) {
     $items = $response->Body->stkCallback->CallbackMetadata->Item;
 
-    // 4. Extract data safely
+    // Extract data
     $amount     = $items[0]->Value ?? 0;
     $mpesaCode  = $items[1]->Value ?? 'UNKNOWN';
     $phone      = $items[4]->Value ?? 'UNKNOWN';
 
-    // 5. Generate unique voucher
+    // Generate voucher
     $voucher = strtoupper(substr(md5(time()), 0, 10));
 
-    // 6. Prepare payload for insert.php (hosted on another server)
+    // Prepare payload
     $payload = http_build_query([
         'voucher'    => $voucher,
         'phone'      => $phone,
@@ -39,6 +35,7 @@ if ($resultCode == 0) {
         'mpesa_code' => $mpesaCode,
     ]);
 
+    // Context for POST request
     $context = stream_context_create([
         'http' => [
             'method'  => 'POST',
@@ -47,17 +44,15 @@ if ($resultCode == 0) {
         ]
     ]);
 
-    // ✅ Replace this URL with where insert.php is hosted (on Replit, 000Webhost, etc.)
-    $render_url = 'https://your-render-service-name.onrender.com/insert.php?secret=daylight123';
+    // ✅ FIXED: Define the insert URL
+    $insert_url = "https://daylightwifi.great-site.net/insert.php?secret=daylight123";
 
-    // 7. Send to InfinityFree or alternative insert.php
-    $insert_response = file_get_contents($insert_url, false, $context);
+    // Send data to InfinityFree insert.php
+    $response = file_get_contents($insert_url, false, $context);
 
-    // 8. Respond to M-PESA (always)
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Callback forwarded to InfinityFree']);
-    exit(); } 
-    else {
-    // Payment failed or cancelled
+    exit();
+} else {
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Payment not successful']);
     exit();
 }
