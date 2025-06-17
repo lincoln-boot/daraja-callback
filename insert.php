@@ -1,34 +1,52 @@
 <?php
-if ($_GET['secret'] !== 'daylight123') {
+// insert.php on Render
+
+// ✅ Require secret key
+$secretKey = $_GET['secret'] ?? '';
+if ($secretKey !== 'daylight123') {
     http_response_code(403);
-    exit('Access denied');
+    echo json_encode(['error' => 'Unauthorized']);
+    exit();
 }
 
+// ✅ Collect data
 $voucher    = $_POST['voucher'] ?? '';
 $phone      = $_POST['phone'] ?? '';
 $amount     = $_POST['amount'] ?? '';
 $mpesa_code = $_POST['mpesa_code'] ?? '';
 
-// ✅ Connect to InfinityFree MySQL database using IP address of sql313.infinityfree.com
-$dbHost = '185.27.134.10'; // IP address for sql313.infinityfree.com
+// ✅ Validate
+if (empty($voucher) || empty($phone) || empty($amount) || empty($mpesa_code)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Missing required fields']);
+    exit();
+}
+
+// ✅ Connect to InfinityFree MySQL
+$dbHost = 'sql313.infinityfree.com';
 $dbUser = 'if0_38969326';
 $dbPass = 'oj12202003';
 $dbName = 'if0_38969326_hotspot_voucherslin';
 
 $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-
 if ($conn->connect_error) {
     http_response_code(500);
-    echo 'Database connection error';
+    echo json_encode(['error' => 'Database connection failed']);
     exit();
 }
 
-// Save to DB
+// ✅ Insert into vouchers table
 $stmt = $conn->prepare("INSERT INTO vouchers (voucher_code, phone, amount, mpesa_code) VALUES (?, ?, ?, ?)");
 $stmt->bind_param("ssss", $voucher, $phone, $amount, $mpesa_code);
 $stmt->execute();
+
+if ($stmt->affected_rows > 0) {
+    echo json_encode(['success' => true, 'voucher' => $voucher]);
+} else {
+    http_response_code(500);
+    echo json_encode(['error' => 'Insert failed']);
+}
+
 $stmt->close();
 $conn->close();
-
-echo "Saved successfully!";
 ?>
