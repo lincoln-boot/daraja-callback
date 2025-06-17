@@ -1,73 +1,19 @@
 <?php
-// callback.php
+// Connect to DB
+$conn = new mysqli("sql313.infinityfree.com", "if0_38969326", "oj12202003", "if0_38969326_hotspot_voucherslin");
 
-// Set headers
-header("Content-Type: application/json");
+$data = json_decode(file_get_contents('php://input'), true);
+$mpesa_code = $data['Body']['stkCallback']['CallbackMetadata']['Item'][1]['Value'];
+$phone = $data['Body']['stkCallback']['CallbackMetadata']['Item'][4]['Value'];
+$amount = $data['Body']['stkCallback']['CallbackMetadata']['Item'][0]['Value'];
 
-// Read the incoming callback
-$data = file_get_contents("php://input");
-$callback = json_decode($data, true);
-
-// Log if decoding fails
-if (!isset($callback['Body']['stkCallback'])) {
-    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Invalid callback data"]);
-    exit;
-}
-
-// Get the transaction details
-$stkCallback = $callback['Body']['stkCallback'];
-$resultCode = $stkCallback['ResultCode'];
-$resultDesc = $stkCallback['ResultDesc'];
-
-// If transaction failed, exit
-if ($resultCode !== 0) {
-    echo json_encode(["ResultCode" => 0, "ResultDesc" => "Transaction failed"]);
-    exit;
-}
-
-// Get phone number from callback
-$phoneNumber = null;
-foreach ($stkCallback['CallbackMetadata']['Item'] as $item) {
-    if ($item['Name'] === 'PhoneNumber') {
-        $phoneNumber = $item['Value'];
-        break;
-    }
-}
-
-// Format phone number (remove + or spaces)
-$phone = preg_replace('/[^0-9]/', '', $phoneNumber);
-
-// === CONNECT TO DATABASE AND PICK VOUCHER ===
-$host = 'localhost';
-$dbname = 'voucher_db';
-$username = 'root';
-$password = '';
-
-try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // Select one unused voucher
-    $stmt = $conn->prepare("SELECT code FROM vouchers WHERE used = 0 LIMIT 1");
-    $stmt->execute();
-    $voucher = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($voucher) {
-        // Mark as used
-        $update = $conn->prepare("UPDATE vouchers SET used = 1, assigned_to = ? WHERE code = ?");
-        $update->execute([$phone, $voucher['code']]);
-
-        // Send voucher to InfinityFree
-        $insert_url = 'https://daylightwifi.great-site.net/insert.php?code=' . urlencode($voucher['code']) . '&phone=' . urlencode($phone);
-        file_get_contents($insert_url);
-
-        echo json_encode(["ResultCode" => 0, "ResultDesc" => "Success"]);
-    } else {
-        echo json_encode(["ResultCode" => 1, "ResultDesc" => "No voucher available"]);
-    }
-
-} catch (PDOException $e) {
-    file_put_contents("db_error_log.txt", $e->getMessage());
-    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Database error"]);
+// Find unused voucher
+$sql = "SELECT * FROM vouchers WHERE phone IS NULL AND amount = '$amount' LIMIT 1";
+$res = $conn->query($sql);
+if ($res->num_rows > 0) {
+    $voucher = $res->fetch_assoc();
+    $code = $voucher['voucher_code'];
+    $conn->query("UPDATE vouchers SET phone='$phone', mpesa_code='$mpesa_code' WHERE voucher_code='$code'");
+    file_put_contents("voucher_log.txt", "Paid: $phone -> $code\n", FILE_APPEND);
 }
 ?>
