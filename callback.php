@@ -49,7 +49,6 @@ if ($resultCode == 0) {
 
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Callback forwarded to InfinityFree']);
     exit();
-
 } else {
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Payment not successful']);
     exit();
