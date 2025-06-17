@@ -1,59 +1,73 @@
 <?php
-// callback.php on Render
+// callback.php
 
-// Step 1: Get raw POST data from Daraja
+// Set headers
+header("Content-Type: application/json");
+
+// Read the incoming callback
 $data = file_get_contents("php://input");
-file_put_contents("/tmp/mpesa_callback_log.txt", $data . PHP_EOL, FILE_APPEND); // Log for debugging
+$callback = json_decode($data, true);
 
-$response = json_decode($data);
-
-// Validate structure
-if (!$response || !isset($response->Body->stkCallback->ResultCode)) {
-    http_response_code(400);
-    echo json_encode(['ResultCode' => 1, 'ResultDesc' => 'Invalid callback data']);
-    exit();
+// Log if decoding fails
+if (!isset($callback['Body']['stkCallback'])) {
+    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Invalid callback data"]);
+    exit;
 }
 
-$resultCode = $response->Body->stkCallback->ResultCode;
+// Get the transaction details
+$stkCallback = $callback['Body']['stkCallback'];
+$resultCode = $stkCallback['ResultCode'];
+$resultDesc = $stkCallback['ResultDesc'];
 
-if ($resultCode == 0) {
-    $items = $response->Body->stkCallback->CallbackMetadata->Item;
+// If transaction failed, exit
+if ($resultCode !== 0) {
+    echo json_encode(["ResultCode" => 0, "ResultDesc" => "Transaction failed"]);
+    exit;
+}
 
-    // Extract data
-    $amount     = $items[0]->Value ?? 0;
-    $mpesaCode  = $items[1]->Value ?? 'UNKNOWN';
-    $phone      = $items[4]->Value ?? 'UNKNOWN';
+// Get phone number from callback
+$phoneNumber = null;
+foreach ($stkCallback['CallbackMetadata']['Item'] as $item) {
+    if ($item['Name'] === 'PhoneNumber') {
+        $phoneNumber = $item['Value'];
+        break;
+    }
+}
 
-    // Generate voucher
-    $voucher = strtoupper(substr(md5(time()), 0, 10));
+// Format phone number (remove + or spaces)
+$phone = preg_replace('/[^0-9]/', '', $phoneNumber);
 
-    // Prepare payload
-    $payload = http_build_query([
-        'voucher'    => $voucher,
-        'phone'      => $phone,
-        'amount'     => $amount,
-        'mpesa_code' => $mpesaCode,
-    ]);
+// === CONNECT TO DATABASE AND PICK VOUCHER ===
+$host = 'localhost';
+$dbname = 'voucher_db';
+$username = 'root';
+$password = '';
 
-    // Context for POST request
-    $context = stream_context_create([
-        'http' => [
-            'method'  => 'POST',
-            'header'  => "Content-Type: application/x-www-form-urlencoded",
-            'content' => $payload
-        ]
-    ]);
+try {
+    $conn = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // ✅ FIXED: Define the insert URL
-    $insert_url = "https://daylightwifi.great-site.net/insert.php?secret=daylight123";
+    // Select one unused voucher
+    $stmt = $conn->prepare("SELECT code FROM vouchers WHERE used = 0 LIMIT 1");
+    $stmt->execute();
+    $voucher = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // Send data to InfinityFree insert.php
-    $response = file_get_contents($insert_url, false, $context);
+    if ($voucher) {
+        // Mark as used
+        $update = $conn->prepare("UPDATE vouchers SET used = 1, assigned_to = ? WHERE code = ?");
+        $update->execute([$phone, $voucher['code']]);
 
-    echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Callback forwarded to InfinityFree']);
-    exit();
-} else {
-    echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Payment not successful']);
-    exit();
+        // Send voucher to InfinityFree
+        $insert_url = 'https://daylightwifi.great-site.net/insert.php?code=' . urlencode($voucher['code']) . '&phone=' . urlencode($phone);
+        file_get_contents($insert_url);
+
+        echo json_encode(["ResultCode" => 0, "ResultDesc" => "Success"]);
+    } else {
+        echo json_encode(["ResultCode" => 1, "ResultDesc" => "No voucher available"]);
+    }
+
+} catch (PDOException $e) {
+    file_put_contents("db_error_log.txt", $e->getMessage());
+    echo json_encode(["ResultCode" => 1, "ResultDesc" => "Database error"]);
 }
 ?>
