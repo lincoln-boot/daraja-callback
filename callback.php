@@ -48,8 +48,8 @@ if ($resultCode == 0) {
     $response = file_get_contents($infinityfree_url, false, $context);
 
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Callback forwarded to InfinityFree']);
-    exit();
-} else {
+    exit(); }
+    else {
     echo json_encode(['ResultCode' => 0, 'ResultDesc' => 'Payment not successful']);
     exit();
 }
