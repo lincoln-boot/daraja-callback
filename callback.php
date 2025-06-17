@@ -48,7 +48,7 @@ if ($resultCode == 0) {
     ]);
 
     // ✅ Replace this URL with where insert.php is hosted (on Replit, 000Webhost, etc.)
-    $insert_url = 'https://daylightwifi.great-site.net/insert.php?secret=daylight123';
+    $render_url = 'https://your-render-service-name.onrender.com/insert.php?secret=daylight123';
 
     // 7. Send to InfinityFree or alternative insert.php
     $insert_response = file_get_contents($insert_url, false, $context);
